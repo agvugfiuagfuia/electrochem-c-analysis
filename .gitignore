@@ -1,0 +1,10 @@
+# 编译产物（用 gcc 重新生成：gcc -O2 -Wall -o xxx.exe xxx.c -lm）
+*.exe
+*.o
+
+# 归档：被本项目替换/废弃的旧文件，不纳入仓库
+archive/
+
+# 临时文件
+.tmp_*/
+*.tmp
