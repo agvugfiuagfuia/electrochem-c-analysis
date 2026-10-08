@@ -174,17 +174,19 @@ int main(void)
     /* ---------- (A) rate capability ---------- */
     CVRun runs[MAX_FILES];
     int nr = 0;
-    printf("[A] Scan-rate series  (2M H2SO4, window %.1f V)\n",
-           (runs[0].e_high - runs[0].e_low) > 0 ? (runs[0].e_high - runs[0].e_low) : 1.6);
-    printf("    %-12s %10s %12s %12s %10s\n",
-           "scan rate", "points", "Q (C)", "C (F)", "retention");
-    printf("    ------------------------------------------------------\n");
-
     for (int k = 0; k < 8; k++) {
         CVRun r;
         if (!read_cv_file(rate_files[k], rate_labels[k], &r)) continue;
         runs[nr++] = r;
     }
+
+    /* Window comes from the file header (High E - Low E); read the
+     * files first, otherwise this would print uninitialised memory. */
+    printf("[A] Scan-rate series  (2M H2SO4, window %.1f V)\n",
+           (nr > 0) ? (runs[0].e_high - runs[0].e_low) : 0.0);
+    printf("    %-12s %10s %12s %12s %10s\n",
+           "scan rate", "points", "Q (C)", "C (F)", "retention");
+    printf("    ------------------------------------------------------\n");
     /* Baseline = the slowest scan, i.e. the closest to equilibrium.
      * Faster scans leave ions less time to reach the pores, so the
      * measured capacitance drops — that drop is the rate capability. */
