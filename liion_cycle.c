@@ -17,8 +17,7 @@
  *   - CSV 解析（strtod / 字符串）  -> 文件与字符串处理
  *
  * 编译： gcc -O2 -Wall -o liion_cycle.exe liion_cycle.c -lm
- * 运行： liion_cycle.exe liion_data/liquid
- *        liion_cycle.exe liion_data/liquid liion_data/solid
+ * 运行： liion_cycle.exe liion_data/cell01
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -223,7 +222,7 @@ static void analyze(const char *label, CurveList *L) {
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("用法: %s <数据目录> [<数据目录2> ...]\n", argv[0]);
-        printf("例:   %s liion_data/liquid liion_data/solid\n", argv[0]);
+        printf("例:   %s liion_data/cell01\n", argv[0]);
         return 1;
     }
     for (int a = 1; a < argc; a++) {
