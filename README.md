@@ -6,6 +6,7 @@
 |---|---|---|---|
 | `liion_cycle.c` | 电池恒流充放电（GCD） | 本人实测（一只电池 5 个循环） | 充放电曲线配对，线性插值求中点电压，计算库仑效率、容量保持率、极化电压 |
 | `cv_capacitance.c` | 超级电容器循环伏安（CV） | 本人 CHI600E 实测数据（12 组 × 4000 点） | 梯形数值积分求电荷量与双电层电容 |
+| `verify.c` | 上述方法的正确性检验 | McMaster LG 18650HG2 公开标准数据集 | 与数据集真实 SOC 标签对照，检验插值与解析管道 |
 
 两个程序均不依赖第三方库，纯标准 C（C99）实现，共约 500 行。`gcc -O2 -Wall` 零警告编译通过，Windows（MinGW）/ Linux 均可。
 
@@ -194,7 +195,13 @@ gcc -O2 -Wall -o liion_cycle.exe liion_cycle.c -lm
 # 模块二：超级电容器 CV 电容分析
 gcc -O2 -Wall -o cv_capacitance.exe cv_capacitance.c -lm
 ./cv_capacitance.exe
+
+# 交叉验证：用 McMaster 公开标准数据集检验上述数值方法
+gcc -O2 -Wall -o verify.exe verify.c -lm
+./verify.exe
 ```
+
+三个程序均以退出码返回结果：`verify.exe` 全部验证项通过时返回 0，否则返回 1，可直接接入自动化流程。
 
 Windows 下生成 `.exe`，直接在命令行运行，结果打印到控制台，同时写出 `cv_rate_capacitance.csv` / `cv_electrolyte.csv`。
 
@@ -284,7 +291,33 @@ Windows 下生成 `.exe`，直接在命令行运行，结果打印到控制台�
 
 这一步排除了数据解析串列、积分取错扫描分支这类低级错误——做数据处理最容易翻车的地方就在这里。
 
-### 7.2 重复性验证（间隔 11 天重测）
+### 7.2 用公开标准数据集交叉验证（McMaster LG 18650HG2）
+
+前两节都是自洽性检验（同一批数据的两种格式、同一对象的不同批次）。但它们**无法回答"算得对不对"**——自测数据没有真值参照。为此引入一份公开标准数据集做**外部交叉验证**。
+
+**数据集**：McMaster 大学 Kollmeyer 等人发布的 LG 18650HG2 电池数据（18650 圆柱电芯，铭牌 3.0 Ah，25 °C），BMS 领域研究 SOC/SOH 的论文常以其为基准。转录 CSV 取自 `raghuramshankar/soc-estimation-of-li-ion-batteries`（MIT License），存于 `verify_data/`。
+
+> Kollmeyer, Phillip; Vidal, Carlos; Naguib Mina; Skells, Michael (2020),
+> "LG 18650HG2 Li-ion Battery Data and Example Deep Neural Network xEV SOC Estimator Script",
+> Mendeley Data, V3, doi:10.17632/cp3473x7xv.3
+
+该数据集的关键价值在于它**带真实 SOC 标签**，于是可以做真正的对照。
+
+**验证程序**：`verify.c`，运行 `./verify.exe`。两项验证：
+
+| 验证项 | 方法 | 结果 |
+|---|---|---|
+| 线性插值 / 中点电压 | 对 SOC = 0.9 / 0.7 / 0.5 / 0.3 / 0.1 五个点，分别用「容量轴插值」与「真实 SOC 标签查值」两条独立路径求电压并比较 | 五个点偏差**全部为 0.000 mV** |
+| 仪器文件解析管道 | 在 Arbin 标准导出格式（48078 行，头部元信息 + 列标题 + 数据区）上验证列序判定与元信息跳过逻辑 | 解析出 48048 点（99.9%），电压范围 2.79–4.20 V |
+
+**结论**：本项目所用的线性插值、中点电压、梯形求积与仪器文件解析管道，在独立第三方标准数据集上结果一致。
+
+#### 验证过程中发现的两个数据事实
+
+1. **该数据集第 4 列 `disCapacity` 在整个放电过程中是常数 2.78074 Ah**——它是该测试的额定放电容量，而非随时间累积的容量，不能直接当容量轴用。程序改用「SOC × 额定容量」换算容量轴。
+2. **HPPC 是脉冲工况，容量字段非单调**——脉冲间歇时容量会短暂回退，因此梯形积分结果（0.895 Ah）与仪器容量字段变化量（2.774 Ah）相差较大，这属正常现象，不能作为一致性判据。
+
+### 7.3 重复性验证（间隔 11 天重测）
 
 用间隔 11 天的第二批重测数据（`origin_multi_0509_3elec.txt`）重复同样计算：
 
@@ -303,7 +336,7 @@ Windows 下生成 `.exe`，直接在命令行运行，结果打印到控制台�
 
 这也是本项目跨扫速、跨电解液对比统一采用**归一化保持率**（以最低扫速 / 最优电解液为 100%）而不是绝对电容的原因：负载量未知时，绝对值不具备跨批次可比性。
 
-> 需要说明的是，7.2 的两批数据里只有 4/28 那批的原始 CHI 文件与 Origin 表同时存在，5/9 那批只有 Origin 表，因此 7.1 的逐位对照只在 4/28 这批上完成。
+> 需要说明的是，7.3 的两批数据里只有 4/28 那批的原始 CHI 文件与 Origin 表同时存在，5/9 那批只有 Origin 表，因此 7.1 的逐位对照只在 4/28 这批上完成。
 
 ---
 
@@ -311,7 +344,7 @@ Windows 下生成 `.exe`，直接在命令行运行，结果打印到控制台�
 
 - **样本量有限**：电池只有 5 个循环，结论主要作方法演示，不足以讨论衰减规律。
 - **缺少关键实验参数**：电池的电流密度、活性物质负载量未记录，因此不给绝对比容量、比电容（F/g）与能量密度；电池的型号、具体体系（正负极、电解液）亦未记录。
-- **批次间重复性有限**：CV 两批之间 H₂SO₄ 与 HCl 排序互换，只能支撑「酸性优于碱性」这一粗结论（见 7.2）。
+- **批次间重复性有限**：CV 两批之间 H₂SO₄ 与 HCl 排序互换，只能支撑「酸性优于碱性」这一粗结论（见 7.3）。
 - **输入格式有要求**：`liion_cycle.c` 只接受「一段曲线一对列」的分段式 CSV，不接受充放电拼接在同一列的整圈式导出（见 4.2）。
 - **单文件命令行工具**，无图形界面；`cv_capacitance.c` 的文件列表目前是硬编码的，换数据需改代码。后续可改为从命令行参数读目录，并加绘图输出（rate capability 曲线）。
 
@@ -323,25 +356,36 @@ Windows 下生成 `.exe`，直接在命令行运行，结果打印到控制台�
 electrochem-c-analysis/
 ├── liion_cycle.c                  # 模块一：电池 GCD 分析
 ├── cv_capacitance.c               # 模块二：超电 CV 分析
+├── verify.c                       # 模块三：用公开标准数据集交叉验证
 ├── liion_data/
 │   ├── cell01/                    # 电池 GCD 分段式 CSV（10 条曲线：5 充 + 5 放）★程序读取此目录
 │   └── cell01_whole/              # 同一只电池的整圈式 CSV（5 圈），仅作对照，程序不读
 ├── cv_data/                       # 超电 CV 原始数据（CHI 导出 12 组 + Origin 对照 2 组）
+├── verify_data/                   # McMaster LG 18650HG2 公开数据集（交叉验证用，非本人实测）
+│   ├── OCV--25degC--549_C20DisCh.csv    # 1C 恒流放电，含真实 SOC 标签
+│   ├── 549_HPPC.csv                     # HPPC 脉冲工况（Arbin 标准导出格式）
+│   ├── CellParams--25degC--551_Mixed1.csv  # 电池模型参数 r0/r1/r2/c1/c2
+│   └── LICENSE_McMaster_repo.txt        # 来源仓库许可（MIT）
 ├── cv_electrolyte.csv             # 输出：电解液电容排名
 ├── cv_rate_capacitance.csv        # 输出：倍率性能
 └── README.md
 ```
 
-> 注：`liion_data/cell01` 与 `liion_data/cell01_whole` 是同一只电池、同一批数据的两种列布局（见 §2.1）。
+> 注 1：`liion_data/cell01` 与 `liion_data/cell01_whole` 是同一只电池、同一批数据的两种列布局（见 §2.1）。
+> 注 2：`verify_data/` 是**第三方公开数据集**（LG 18650HG2，McMaster），仅用于验证程序正确性，与 `liion_data/` 的本人实测数据性质不同，勿混淆。
 
 ---
 
 ## 十、数据来源
 
-两组数据均为本人实验测得 / 处理所得，非公开数据集：
+`liion_data/` 与 `cv_data/` 两组数据均为本人实验测得 / 处理所得，非公开数据集：
 
 - **电池 GCD**：实验导出的 Excel（`锂电池数据.xlsx`），用脚本拆分为每条曲线一个 CSV；一只电池 5 个循环，共 10 条曲线、9036 个数据点。数据以两种列布局（分段式 / 整圈式）分别存于 `liion_data/cell01/` 与 `liion_data/cell01_whole/`，二者同源。
 - **超电 CV**：CHI600E 电化学工作站原始导出文件，12 组 × 4000 点；另有 2 组 Origin 导出的多列对照表用于校验。
+
+`verify_data/` 是**唯一的第三方数据**，用于方法正确性的外部验证：
+
+- **McMaster LG 18650HG2 标准数据集**（1C 恒流放电 1097 点，含真实 SOC 标签；HPPC 脉冲工况 48048 点），转录自 `raghuramshankar/soc-estimation-of-li-ion-batteries`（MIT License）。原始出处：Kollmeyer 等人, Mendeley Data V3, doi:10.17632/cp3473x7xv.3。
 
 ---
 
